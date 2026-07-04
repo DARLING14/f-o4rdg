@@ -5,13 +5,14 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import { client } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
+import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   username: string | null;
-  login: (username: string, password: string, rememberMe: boolean) => Promise<{ success: boolean; message: string }>;
+  login: (email: string, password: string, rememberMe: boolean) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
 }
 
@@ -34,59 +35,65 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string | null>(null);
 
-  const checkSession = async () => {
-    try {
-      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      if (!token) {
-        setIsAuthenticated(false);
-        setLoading(false);
-        return;
-      }
+  const extractUsername = (user: User | null): string | null => {
+    if (!user) return null;
+    return user.user_metadata?.full_name || user.email?.split('@')[0] || null;
+  };
 
-      const response = await client.apiCall.invoke({
-        url: '/api/v1/private-auth/verify',
-        method: 'POST',
-        data: { token },
-      });
-
-      if (response.data?.valid) {
-        setIsAuthenticated(true);
-        setUsername(response.data.username);
-      } else {
-        localStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_token');
-        setIsAuthenticated(false);
-        setUsername(null);
-      }
-    } catch {
+  const handleSession = (session: Session | null) => {
+    if (session?.user) {
+      setIsAuthenticated(true);
+      setUsername(extractUsername(session.user));
+    } else {
       setIsAuthenticated(false);
       setUsername(null);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const login = async (usernameInput: string, password: string, rememberMe: boolean) => {
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+      setLoading(false);
+    });
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        handleSession(session);
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const login = async (email: string, password: string, _rememberMe: boolean) => {
     try {
-      const response = await client.apiCall.invoke({
-        url: '/api/v1/private-auth/login',
-        method: 'POST',
-        data: { username: usernameInput, password, remember_me: rememberMe },
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      if (response.data?.success) {
-        const token = response.data.token;
-        if (rememberMe) {
-          localStorage.setItem('auth_token', token);
-        } else {
-          sessionStorage.setItem('auth_token', token);
+      if (error) {
+        // Map Supabase error messages to user-friendly messages
+        let message = error.message;
+        if (message.includes('Invalid login credentials')) {
+          message = 'Invalid email or password. Please try again.';
+        } else if (message.includes('Email not confirmed')) {
+          message = 'Please confirm your email address before logging in.';
+        } else if (message.includes('Too many requests')) {
+          message = 'Too many login attempts. Please wait a moment and try again.';
         }
-        setIsAuthenticated(true);
-        setUsername(usernameInput);
-        return { success: true, message: response.data.message };
-      } else {
-        return { success: false, message: response.data?.message || 'Invalid credentials' };
+        return { success: false, message };
       }
+
+      if (data.user) {
+        return { success: true, message: 'Welcome back, my love! 💕' };
+      }
+
+      return { success: false, message: 'Login failed. Please try again.' };
     } catch {
       return { success: false, message: 'Authentication error. Please try again.' };
     }
@@ -94,27 +101,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
-      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      if (token) {
-        await client.apiCall.invoke({
-          url: '/api/v1/private-auth/logout',
-          method: 'POST',
-          data: { token },
-        });
-      }
+      await supabase.auth.signOut();
     } catch {
       // Ignore errors during logout
     } finally {
-      localStorage.removeItem('auth_token');
-      sessionStorage.removeItem('auth_token');
       setIsAuthenticated(false);
       setUsername(null);
     }
   };
-
-  useEffect(() => {
-    checkSession();
-  }, []);
 
   const value: AuthContextType = {
     isAuthenticated,
