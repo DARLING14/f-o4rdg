@@ -3,11 +3,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import AuthCallback from './pages/AuthCallback';
-import AuthError from './pages/AuthError';
-import LoginPage from './pages/LoginPage';
-import LandingPage from './pages/LandingPage';
-import MainPage from './pages/MainPage';
+import LoginPage from '@/pages/LoginPage';
+import LandingPage from '@/pages/LandingPage';
+import MainPage from '@/pages/MainPage';
+import ReceiptPage from '@/pages/ReceiptPage';
 
 const queryClient = new QueryClient();
 
@@ -34,8 +33,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 const AppRoutes = () => (
   <Routes>
     <Route path="/login" element={<LoginPage />} />
-    <Route path="/auth/callback" element={<AuthCallback />} />
-    <Route path="/auth/error" element={<AuthError />} />
     <Route
       path="/"
       element={
@@ -49,6 +46,14 @@ const AppRoutes = () => (
       element={
         <ProtectedRoute>
           <MainPage />
+        </ProtectedRoute>
+      }
+    />
+    <Route
+      path="/receipt"
+      element={
+        <ProtectedRoute>
+          <ReceiptPage />
         </ProtectedRoute>
       }
     />
